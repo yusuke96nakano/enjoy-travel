@@ -235,6 +235,9 @@ const monthKey = (date: Date) => {
   return `${year}-${month}`;
 };
 
+const tripMonthKey = (trip: Trip) => trip.startDate.slice(0, 7);
+const tripYearKey = (trip: Trip) => trip.startDate.slice(0, 4);
+
 const buildAutoFlight = (airFares: AirFare[], date: string, from: string, to: string, note: string): TransportItem => {
   const base: TransportItem = {
     ...emptyTransport(date),
@@ -331,31 +334,35 @@ export default function HomePage() {
   const totals = useMemo(() => calculateTotals(activeTrip), [activeTrip]);
   const currentMonthKey = monthKey(new Date());
   const previousMonthKey = monthKey(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1));
+  const sortedTrips = useMemo(
+    () => [...trips].sort((a, b) => b.startDate.localeCompare(a.startDate) || b.createdAt.localeCompare(a.createdAt)),
+    [trips],
+  );
   const monthTotal = useMemo(() => {
     return trips
-      .filter((item) => item.createdAt.slice(0, 7) === currentMonthKey)
+      .filter((item) => tripMonthKey(item) === currentMonthKey)
       .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
   }, [trips, currentMonthKey]);
   const monthUsage = useMemo(() => {
-    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 7) === currentMonthKey));
+    return summarizeTripUsage(trips.filter((item) => tripMonthKey(item) === currentMonthKey));
   }, [trips, currentMonthKey]);
   const previousMonthTotal = useMemo(() => {
     return trips
-      .filter((item) => item.createdAt.slice(0, 7) === previousMonthKey)
+      .filter((item) => tripMonthKey(item) === previousMonthKey)
       .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
   }, [trips, previousMonthKey]);
   const previousMonthUsage = useMemo(() => {
-    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 7) === previousMonthKey));
+    return summarizeTripUsage(trips.filter((item) => tripMonthKey(item) === previousMonthKey));
   }, [trips, previousMonthKey]);
   const yearTotal = useMemo(() => {
     const year = new Date().getFullYear().toString();
     return trips
-      .filter((item) => item.createdAt.slice(0, 4) === year)
+      .filter((item) => tripYearKey(item) === year)
       .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
   }, [trips]);
   const yearUsage = useMemo(() => {
     const year = new Date().getFullYear().toString();
-    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 4) === year));
+    return summarizeTripUsage(trips.filter((item) => tripYearKey(item) === year));
   }, [trips]);
 
   const updateTrip = (patch: Partial<Trip>) => setTrip((current) => (current ? { ...current, ...patch } : null));
@@ -493,7 +500,7 @@ export default function HomePage() {
                 <div className="p-6 text-sm text-slate-600">保存済みの出張データはまだありません。</div>
               ) : (
                 <div className="divide-y divide-line">
-                  {trips.map((item) => {
+                  {sortedTrips.map((item) => {
                     const itemTotals = calculateTotals(item);
                     return (
                       <article key={item.id} className="grid gap-3 p-4 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
