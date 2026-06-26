@@ -44,7 +44,7 @@ input[type="date"]::-webkit-date-and-time-value {
 
 @page {
   size: A4 portrait;
-  margin: 10mm;
+  margin: 0;
 }
 
 @media print {
@@ -67,10 +67,10 @@ input[type="date"]::-webkit-date-and-time-value {
   .print-page {
     box-shadow: none !important;
     margin: 0 !important;
-    min-height: auto !important;
-    width: 100% !important;
+    min-height: 297mm !important;
+    width: 210mm !important;
     max-width: none !important;
-    padding: 0 !important;
+    padding: 14mm !important;
     page-break-after: avoid;
     break-after: avoid;
   }
