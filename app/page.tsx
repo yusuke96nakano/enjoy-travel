@@ -215,6 +215,11 @@ const formatFlightNoInput = (airline: TransportItem["airline"], value: string) =
   return `${prefix}${digits}`;
 };
 
+const hasTransportContent = (item: TransportItem) => {
+  const flightNoOnlyPrefix = item.flightNo === "JAL" || item.flightNo === "NH";
+  return Boolean(item.from || item.to || item.amount || item.note || (item.flightNo && !flightNoOnlyPrefix));
+};
+
 const buildAutoFlight = (airFares: AirFare[], date: string, from: string, to: string, note: string): TransportItem => {
   const base: TransportItem = {
     ...emptyTransport(date),
@@ -802,9 +807,7 @@ function TripForm({
     const destinationAirport = inferDestinationAirport(trip.destination);
     const outbound = buildAutoFlight(airFares, trip.startDate, "ITM", destinationAirport, "往路");
     const inbound = buildAutoFlight(airFares, trip.endDate || trip.startDate, destinationAirport, "ITM", "復路");
-    const filledTransports = trip.transports.filter(
-      (item) => item.from || item.to || item.flightNo || item.amount || item.note,
-    );
+    const filledTransports = trip.transports.filter(hasTransportContent);
     onChange({ transports: [...filledTransports, outbound, inbound] });
   };
 
