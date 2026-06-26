@@ -193,6 +193,28 @@ const applyAirFare = (airFares: AirFare[], item: TransportItem, patch: Partial<T
   };
 };
 
+const flightNoPrefix = (airline: TransportItem["airline"]) => {
+  if (airline === "JAL") return "JAL";
+  if (airline === "ANA") return "NH";
+  return "";
+};
+
+const applyFlightNoPrefix = (item: TransportItem, patch: Partial<TransportItem>): Partial<TransportItem> => {
+  if (!("airline" in patch)) return patch;
+  const prefix = flightNoPrefix(patch.airline ?? "");
+  const currentAutoPrefix = item.flightNo === "JAL" || item.flightNo === "NH";
+  if (!prefix) return currentAutoPrefix ? { ...patch, flightNo: "" } : patch;
+  if (!item.flightNo || currentAutoPrefix) return { ...patch, flightNo: prefix };
+  return patch;
+};
+
+const formatFlightNoInput = (airline: TransportItem["airline"], value: string) => {
+  const prefix = flightNoPrefix(airline);
+  if (!prefix) return value;
+  const digits = value.replace(prefix, "").replace(/\D/g, "");
+  return `${prefix}${digits}`;
+};
+
 const buildAutoFlight = (airFares: AirFare[], date: string, from: string, to: string, note: string): TransportItem => {
   const base: TransportItem = {
     ...emptyTransport(date),
@@ -209,7 +231,7 @@ const emptyTransport = (date = new Date().toISOString().slice(0, 10)): Transport
   date,
   type: "飛行機",
   airline: "JAL",
-  flightNo: "",
+  flightNo: "JAL",
   from: "",
   to: "",
   fareType: "フレックス",
@@ -773,7 +795,7 @@ function TripForm({
   const setTransport = (id: string, patch: Partial<TransportItem>) =>
     onChange({
       transports: trip.transports.map((item) =>
-        item.id === id ? { ...item, ...applyAirFare(airFares, item, patch) } : item,
+        item.id === id ? { ...item, ...applyAirFare(airFares, item, applyFlightNoPrefix(item, patch)) } : item,
       ),
     });
   const createRoundTripTransports = () => {
@@ -869,7 +891,13 @@ function TripForm({
                         <option key={value}>{value}</option>
                       ))}
                     </select>
-                    <input className={inputClass} placeholder="便名" value={item.flightNo} onChange={(event) => setTransport(item.id, { flightNo: event.target.value })} />
+                    <input
+                      className={inputClass}
+                      inputMode={item.airline === "JAL" || item.airline === "ANA" ? "numeric" : "text"}
+                      placeholder="便名"
+                      value={item.flightNo}
+                      onChange={(event) => setTransport(item.id, { flightNo: formatFlightNoInput(item.airline, event.target.value) })}
+                    />
                   </div>
                   <div className="grid gap-2 sm:grid-cols-5">
                     <SuggestInput
