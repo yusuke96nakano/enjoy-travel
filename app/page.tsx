@@ -17,6 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { calculateTotals, dateDiffDaysInclusive, findRule, lodgingNights, uid, yen } from "@/lib/calc";
 import { defaultAirFares, defaultProfile, defaultRules } from "@/lib/data";
+import { downloadExpensePdf, downloadReportPdf } from "@/lib/pdfGenerator";
 import { AirFare, LodgingItem, Profile, TransportItem, TravelRule, Trip, TripCategory } from "@/lib/types";
 
 const storageKeys = {
@@ -435,18 +436,14 @@ export default function HomePage() {
                             label="報告書"
                             icon={<FileText size={18} />}
                             onClick={() => {
-                              setTrip(item);
-                              setPrintBackView("dashboard");
-                              setView("print-report");
+                              downloadReportPdf({ ...item, reportText: item.reportText || buildReportText(item) });
                             }}
                           />
                           <HistoryPdfButton
                             label="精算書"
                             icon={<Download size={18} />}
                             onClick={() => {
-                              setTrip(item);
-                              setPrintBackView("dashboard");
-                              setView("print-expense");
+                              downloadExpensePdf({ ...item, reportText: item.reportText || buildReportText(item) });
                             }}
                           />
                           <IconButton label="削除" onClick={() => deleteTrip(item.id)}>
@@ -486,14 +483,14 @@ export default function HomePage() {
           refreshRule={refreshRule}
           onSave={saveTrip}
           onReport={() => {
-            setTrip((current) => (current ? { ...current, reportText: current.reportText || buildReportText(current) } : current));
-            setPrintBackView("form");
-            setView("print-report");
+            const outputTrip = { ...trip, reportText: trip.reportText || buildReportText(trip) };
+            setTrip(outputTrip);
+            downloadReportPdf(outputTrip);
           }}
           onExpense={() => {
-            setTrip((current) => (current ? { ...current, reportText: current.reportText || buildReportText(current) } : current));
-            setPrintBackView("form");
-            setView("print-expense");
+            const outputTrip = { ...trip, reportText: trip.reportText || buildReportText(trip) };
+            setTrip(outputTrip);
+            downloadExpensePdf(outputTrip);
           }}
         />
       )}
