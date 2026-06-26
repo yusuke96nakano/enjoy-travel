@@ -229,6 +229,12 @@ const summarizeTripUsage = (items: Trip[]) =>
     { lodgingNights: 0, flightCount: 0 },
   );
 
+const monthKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+};
+
 const buildAutoFlight = (airFares: AirFare[], date: string, from: string, to: string, note: string): TransportItem => {
   const base: TransportItem = {
     ...emptyTransport(date),
@@ -323,16 +329,24 @@ export default function HomePage() {
 
   const activeTrip = trip ?? createTrip(profile, rules);
   const totals = useMemo(() => calculateTotals(activeTrip), [activeTrip]);
+  const currentMonthKey = monthKey(new Date());
+  const previousMonthKey = monthKey(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1));
   const monthTotal = useMemo(() => {
-    const month = new Date().toISOString().slice(0, 7);
     return trips
-      .filter((item) => item.createdAt.slice(0, 7) === month)
+      .filter((item) => item.createdAt.slice(0, 7) === currentMonthKey)
       .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
-  }, [trips]);
+  }, [trips, currentMonthKey]);
   const monthUsage = useMemo(() => {
-    const month = new Date().toISOString().slice(0, 7);
-    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 7) === month));
-  }, [trips]);
+    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 7) === currentMonthKey));
+  }, [trips, currentMonthKey]);
+  const previousMonthTotal = useMemo(() => {
+    return trips
+      .filter((item) => item.createdAt.slice(0, 7) === previousMonthKey)
+      .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
+  }, [trips, previousMonthKey]);
+  const previousMonthUsage = useMemo(() => {
+    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 7) === previousMonthKey));
+  }, [trips, previousMonthKey]);
   const yearTotal = useMemo(() => {
     const year = new Date().getFullYear().toString();
     return trips
@@ -439,7 +453,7 @@ export default function HomePage() {
 
       {view === "dashboard" && (
         <section className="mx-auto max-w-6xl px-4 py-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <button
               onClick={startNew}
               className="flex min-h-24 items-center justify-center gap-3 rounded-lg bg-moss px-5 py-4 text-lg font-bold text-white shadow-soft"
@@ -452,6 +466,14 @@ export default function HomePage() {
               details={[
                 ["宿泊数", `${monthUsage.lodgingNights}泊`],
                 ["搭乗回数", `${monthUsage.flightCount}回`],
+              ]}
+            />
+            <SummaryCard
+              label="先月の旅費合計"
+              value={yen(previousMonthTotal)}
+              details={[
+                ["宿泊数", `${previousMonthUsage.lodgingNights}泊`],
+                ["搭乗回数", `${previousMonthUsage.flightCount}回`],
               ]}
             />
             <SummaryCard
