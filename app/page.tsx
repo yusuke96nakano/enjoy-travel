@@ -885,7 +885,7 @@ function TripForm({
     if ("amount" in patch) return patch;
     const next = { ...item, ...patch };
     const nights = lodgingNights(next);
-    return nights > 0 && rule ? { ...patch, amount: rule.lodging * nights } : patch;
+    return { ...patch, amount: nights > 0 && rule ? rule.lodging * nights : 0 };
   };
 
   const setLodging = (id: string, patch: Partial<LodgingItem>) =>
@@ -1043,7 +1043,7 @@ function TripForm({
                   onChange({
                     lodgings: [
                       ...trip.lodgings,
-                      { ...lodging, amount: rule && nights > 0 ? rule.lodging * nights : rule?.lodging ?? 0 },
+                      { ...lodging, amount: rule && nights > 0 ? rule.lodging * nights : 0 },
                     ],
                   });
                 }}
