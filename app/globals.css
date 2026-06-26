@@ -42,19 +42,40 @@ input[type="date"]::-webkit-date-and-time-value {
   }
 }
 
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
 @media print {
+  html,
   body {
     background: white;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .no-print {
     display: none !important;
   }
 
+  main {
+    background: white !important;
+    padding: 0 !important;
+  }
+
   .print-page {
     box-shadow: none !important;
     margin: 0 !important;
-    width: 210mm !important;
-    min-height: 297mm !important;
+    min-height: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .print-page h1 {
+    margin-top: 0 !important;
   }
 }
