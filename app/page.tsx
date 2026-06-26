@@ -220,6 +220,15 @@ const hasTransportContent = (item: TransportItem) => {
   return Boolean(item.from || item.to || item.amount || item.note || (item.flightNo && !flightNoOnlyPrefix));
 };
 
+const summarizeTripUsage = (items: Trip[]) =>
+  items.reduce(
+    (summary, item) => ({
+      lodgingNights: summary.lodgingNights + item.lodgings.reduce((sum, lodging) => sum + lodgingNights(lodging), 0),
+      flightCount: summary.flightCount + item.transports.filter((transport) => transport.type === "飛行機").length,
+    }),
+    { lodgingNights: 0, flightCount: 0 },
+  );
+
 const buildAutoFlight = (airFares: AirFare[], date: string, from: string, to: string, note: string): TransportItem => {
   const base: TransportItem = {
     ...emptyTransport(date),
@@ -320,11 +329,19 @@ export default function HomePage() {
       .filter((item) => item.createdAt.slice(0, 7) === month)
       .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
   }, [trips]);
+  const monthUsage = useMemo(() => {
+    const month = new Date().toISOString().slice(0, 7);
+    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 7) === month));
+  }, [trips]);
   const yearTotal = useMemo(() => {
     const year = new Date().getFullYear().toString();
     return trips
       .filter((item) => item.createdAt.slice(0, 4) === year)
       .reduce((sum, item) => sum + calculateTotals(item).grand, 0);
+  }, [trips]);
+  const yearUsage = useMemo(() => {
+    const year = new Date().getFullYear().toString();
+    return summarizeTripUsage(trips.filter((item) => item.createdAt.slice(0, 4) === year));
   }, [trips]);
 
   const updateTrip = (patch: Partial<Trip>) => setTrip((current) => (current ? { ...current, ...patch } : null));
@@ -429,8 +446,22 @@ export default function HomePage() {
             >
               <Plus size={24} /> 新規出張作成
             </button>
-            <SummaryCard label="今月の旅費合計" value={yen(monthTotal)} />
-            <SummaryCard label="今年の旅費合計" value={yen(yearTotal)} />
+            <SummaryCard
+              label="今月の旅費合計"
+              value={yen(monthTotal)}
+              details={[
+                ["宿泊数", `${monthUsage.lodgingNights}泊`],
+                ["搭乗回数", `${monthUsage.flightCount}回`],
+              ]}
+            />
+            <SummaryCard
+              label="今年の旅費合計"
+              value={yen(yearTotal)}
+              details={[
+                ["宿泊数", `${yearUsage.lodgingNights}泊`],
+                ["搭乗回数", `${yearUsage.flightCount}回`],
+              ]}
+            />
           </div>
 
           <div className="mt-6">
@@ -566,11 +597,21 @@ function HistoryPdfButton({ label, icon, onClick }: { label: string; icon: React
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({ label, value, details = [] }: { label: string; value: string; details?: string[][] }) {
   return (
     <div className="rounded-lg border border-line bg-white p-4">
       <p className="text-sm text-slate-600">{label}</p>
       <p className="mt-2 text-2xl font-bold">{value}</p>
+      {details.length > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3 text-sm">
+          {details.map(([detailLabel, detailValue]) => (
+            <div key={detailLabel}>
+              <p className="text-xs text-slate-500">{detailLabel}</p>
+              <p className="font-bold text-ink">{detailValue}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
