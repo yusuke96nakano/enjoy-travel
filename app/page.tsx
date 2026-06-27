@@ -237,6 +237,10 @@ const monthKey = (date: Date) => {
 
 const tripMonthKey = (trip: Trip) => trip.startDate.slice(0, 7);
 const tripYearKey = (trip: Trip) => trip.startDate.slice(0, 4);
+const formatMonthLabel = (key: string) => {
+  const [year, month] = key.split("-");
+  return `${Number(year)}年${Number(month)}月`;
+};
 
 const buildAutoFlight = (airFares: AirFare[], date: string, from: string, to: string, note: string): TransportItem => {
   const base: TransportItem = {
@@ -312,6 +316,7 @@ export default function HomePage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [printBackView, setPrintBackView] = useState<"dashboard" | "form">("form");
+  const [historyMonth, setHistoryMonth] = useState<string>("all");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -337,6 +342,14 @@ export default function HomePage() {
   const sortedTrips = useMemo(
     () => [...trips].sort((a, b) => b.startDate.localeCompare(a.startDate) || b.createdAt.localeCompare(a.createdAt)),
     [trips],
+  );
+  const historyMonths = useMemo(() => {
+    const months = Array.from(new Set(sortedTrips.map(tripMonthKey)));
+    return months.slice(0, 24);
+  }, [sortedTrips]);
+  const filteredTrips = useMemo(
+    () => (historyMonth === "all" ? sortedTrips : sortedTrips.filter((item) => tripMonthKey(item) === historyMonth)),
+    [historyMonth, sortedTrips],
   );
   const monthTotal = useMemo(() => {
     return trips
@@ -495,12 +508,39 @@ export default function HomePage() {
 
           <div className="mt-6">
             <SectionTitle icon={<CalendarDays size={20} />} title="過去の出張一覧" />
+            {trips.length > 0 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  className={`min-h-10 shrink-0 rounded-lg border px-4 text-sm font-bold ${
+                    historyMonth === "all" ? "border-ink bg-ink text-white" : "border-line bg-white text-ink"
+                  }`}
+                  onClick={() => setHistoryMonth("all")}
+                >
+                  すべて
+                </button>
+                {historyMonths.map((month) => (
+                  <button
+                    type="button"
+                    key={month}
+                    className={`min-h-10 shrink-0 rounded-lg border px-4 text-sm font-bold ${
+                      historyMonth === month ? "border-ink bg-ink text-white" : "border-line bg-white text-ink"
+                    }`}
+                    onClick={() => setHistoryMonth(month)}
+                  >
+                    {formatMonthLabel(month)}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white">
               {trips.length === 0 ? (
                 <div className="p-6 text-sm text-slate-600">保存済みの出張データはまだありません。</div>
+              ) : filteredTrips.length === 0 ? (
+                <div className="p-6 text-sm text-slate-600">この月の出張データはありません。</div>
               ) : (
                 <div className="divide-y divide-line">
-                  {sortedTrips.map((item) => {
+                  {filteredTrips.map((item) => {
                     const itemTotals = calculateTotals(item);
                     return (
                       <article key={item.id} className="grid gap-3 p-4 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
