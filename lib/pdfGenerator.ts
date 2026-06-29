@@ -256,9 +256,28 @@ const downloadBlob = (blob: Blob, filename: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
+  const file = new File([blob], filename, { type: "application/pdf" });
+  const shareData = {
+    title: filename.replace(/\.pdf$/i, ""),
+    files: [file],
+  };
+
+  if (navigator.canShare?.(shareData)) {
+    try {
+      await navigator.share(shareData);
+      return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+    }
+  }
+
+  downloadBlob(blob, filename);
+};
+
 const canvasesToPdf = (pages: DrawPage[], filename: string) => {
   const imageDataUrls = pages.map((page) => page.canvas.toDataURL("image/jpeg", 0.94));
-  downloadBlob(buildPdf(imageDataUrls), filename);
+  void shareOrDownloadPdf(buildPdf(imageDataUrls), filename);
 };
 
 export const downloadReportPdf = (trip: Trip) => {
