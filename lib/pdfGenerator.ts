@@ -258,18 +258,21 @@ const downloadBlob = (blob: Blob, filename: string) => {
 
 const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
   const file = new File([blob], filename, { type: "application/pdf" });
-  const shareData = {
-    title: filename.replace(/\.pdf$/i, ""),
-    files: [file],
-  };
+  const shareData = { files: [file] };
+  const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
-  if (navigator.canShare?.(shareData)) {
+  if (navigator.share) {
     try {
       await navigator.share(shareData);
       return;
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
     }
+  }
+
+  if (isAppleMobile) {
+    alert("PDFファイルの共有を開けませんでした。Safariで開き直してから、もう一度PDFボタンを押してください。");
+    return;
   }
 
   downloadBlob(blob, filename);
