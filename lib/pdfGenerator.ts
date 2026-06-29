@@ -270,11 +270,6 @@ const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
     }
   }
 
-  if (isAppleMobile) {
-    alert("PDFファイルの共有を開けませんでした。Safariで開き直してから、もう一度PDFボタンを押してください。");
-    return;
-  }
-
   downloadBlob(blob, filename);
 };
 
