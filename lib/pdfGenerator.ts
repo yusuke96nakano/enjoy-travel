@@ -263,11 +263,22 @@ const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
 
   if (navigator.share) {
     try {
-      await navigator.share(shareData);
-      return;
+      if (!navigator.canShare || navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        return;
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
+      if (isAppleMobile) {
+        const shouldOpen = window.confirm("PDFファイルとして直接共有できませんでした。URLが一緒に表示される可能性がありますが、PDFを開きますか？");
+        if (!shouldOpen) return;
+      }
     }
+  }
+
+  if (isAppleMobile) {
+    const shouldOpen = window.confirm("この端末ではPDFファイルとして直接共有できませんでした。URLが一緒に表示される可能性がありますが、PDFを開きますか？");
+    if (!shouldOpen) return;
   }
 
   downloadBlob(blob, filename);
