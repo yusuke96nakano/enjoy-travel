@@ -7,6 +7,16 @@ export const defaultProfile: Profile = {
   title: "代表取締役",
 };
 
+export const defaultProfiles: Profile[] = [
+  defaultProfile,
+  {
+    companyName: "enjoy life株式会社",
+    name: "中野 沙織",
+    department: "取締役",
+    title: "取締役",
+  },
+];
+
 export const defaultRules: TravelRule[] = [
   {
     id: "rule-ceo-domestic-short",

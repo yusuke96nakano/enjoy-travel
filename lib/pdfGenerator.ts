@@ -259,16 +259,9 @@ const downloadBlob = (blob: Blob, filename: string) => {
 const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
   const file = new File([blob], filename, { type: "application/pdf" });
   const fileShareData = { files: [file], title: filename };
-  const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
   if (navigator.share) {
     try {
-      if (isAppleMobile) {
-        const url = URL.createObjectURL(blob);
-        await navigator.share({ ...fileShareData, text: url, url });
-        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-        return;
-      }
       if (!navigator.canShare || navigator.canShare(fileShareData)) {
         await navigator.share(fileShareData);
         return;

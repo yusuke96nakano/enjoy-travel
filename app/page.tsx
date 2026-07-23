@@ -16,12 +16,14 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { calculateTotals, dateDiffDaysInclusive, findRule, lodgingNights, uid, yen } from "@/lib/calc";
-import { defaultAirFares, defaultProfile, defaultRules } from "@/lib/data";
+import { defaultAirFares, defaultProfile, defaultProfiles, defaultRules } from "@/lib/data";
 import { downloadExpensePdf, downloadReportPdf } from "@/lib/pdfGenerator";
 import { AirFare, LodgingItem, Profile, TransportItem, TravelRule, Trip, TripCategory } from "@/lib/types";
 
 const storageKeys = {
   profile: "travel-ai-profile",
+  profiles: "travel-ai-profiles",
+  selectedProfile: "travel-ai-selected-profile",
   rules: "travel-ai-rules",
   trips: "travel-ai-trips",
   airFares: "travel-ai-air-fares",
@@ -310,7 +312,8 @@ const loadJson = <T,>(key: string, fallback: T): T => {
 
 export default function HomePage() {
   const [view, setView] = useState<"dashboard" | "form" | "settings" | "print-report" | "print-expense">("dashboard");
-  const [profile, setProfile] = useState<Profile>(defaultProfile);
+  const [profiles, setProfiles] = useState<Profile[]>(defaultProfiles);
+  const [selectedProfileIndex, setSelectedProfileIndex] = useState(0);
   const [rules, setRules] = useState<TravelRule[]>(defaultRules);
   const [airFares, setAirFares] = useState<AirFare[]>(defaultAirFares);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -320,7 +323,15 @@ export default function HomePage() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setProfile(loadJson(storageKeys.profile, defaultProfile));
+    const legacyProfile = loadJson(storageKeys.profile, defaultProfile);
+    const savedProfiles = loadJson<Profile[]>(storageKeys.profiles, []);
+    const loadedProfiles = savedProfiles.length
+      ? savedProfiles
+      : [legacyProfile, defaultProfiles[1]];
+    setProfiles(loadedProfiles);
+    const selectedName = loadJson(storageKeys.selectedProfile, loadedProfiles[0].name);
+    const savedIndex = loadedProfiles.findIndex((item) => item.name === selectedName);
+    setSelectedProfileIndex(savedIndex >= 0 ? savedIndex : 0);
     setRules(loadJson(storageKeys.rules, defaultRules));
     setAirFares(loadJson(storageKeys.airFares, defaultAirFares));
     setTrips(loadJson(storageKeys.trips, []));
@@ -329,12 +340,18 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!loaded) return;
+    const profile = profiles[selectedProfileIndex] ?? profiles[0] ?? defaultProfile;
     localStorage.setItem(storageKeys.profile, JSON.stringify(profile));
+    localStorage.setItem(storageKeys.profiles, JSON.stringify(profiles));
+    localStorage.setItem(storageKeys.selectedProfile, JSON.stringify(profile.name));
     localStorage.setItem(storageKeys.rules, JSON.stringify(rules));
     localStorage.setItem(storageKeys.airFares, JSON.stringify(airFares));
     localStorage.setItem(storageKeys.trips, JSON.stringify(trips));
-  }, [loaded, profile, rules, airFares, trips]);
+  }, [loaded, profiles, selectedProfileIndex, rules, airFares, trips]);
 
+  const profile = profiles[selectedProfileIndex] ?? profiles[0] ?? defaultProfile;
+  const setProfile = (nextProfile: Profile) =>
+    setProfiles((items) => items.map((item, index) => (index === selectedProfileIndex ? nextProfile : item)));
   const activeTrip = trip ?? createTrip(profile, rules);
   const totals = useMemo(() => calculateTotals(activeTrip), [activeTrip]);
   const currentMonthKey = monthKey(new Date());
@@ -385,7 +402,7 @@ export default function HomePage() {
       if (!current) return current;
       const startDateChanged = typeof next.startDate === "string" && next.startDate !== current.startDate;
       const merged = { ...current, ...next };
-      const rule = findRule(rules, merged.startDate, merged.category, profile.title);
+      const rule = findRule(rules, merged.startDate, merged.category, merged.profileSnapshot.title);
 
       if (startDateChanged) {
         merged.transports = merged.transports.map((item, index) =>
@@ -407,7 +424,7 @@ export default function HomePage() {
 
       return {
         ...merged,
-        profileSnapshot: { ...profile },
+        profileSnapshot: { ...merged.profileSnapshot },
         ruleSnapshot: rule ? { ...rule } : null,
       };
     });
@@ -417,7 +434,7 @@ export default function HomePage() {
     if (!trip) return;
     const normalized = {
       ...trip,
-      profileSnapshot: { ...profile },
+      profileSnapshot: { ...trip.profileSnapshot },
       ruleSnapshot: trip.ruleSnapshot ? { ...trip.ruleSnapshot } : null,
       reportText: trip.reportText || buildReportText(trip),
     };
@@ -435,6 +452,8 @@ export default function HomePage() {
   };
 
   const editTrip = (target: Trip) => {
+    const profileIndex = profiles.findIndex((item) => item.name === target.profileSnapshot.name);
+    if (profileIndex >= 0) setSelectedProfileIndex(profileIndex);
     setTrip(target);
     setView("form");
   };
@@ -473,6 +492,24 @@ export default function HomePage() {
 
       {view === "dashboard" && (
         <section className="mx-auto max-w-6xl px-4 py-5">
+          <div className="mb-4 rounded-lg border border-line bg-white p-4 shadow-soft">
+            <Field label="今回の出張者">
+              <select
+                className={inputClass}
+                value={selectedProfileIndex}
+                onChange={(event) => setSelectedProfileIndex(Number(event.target.value))}
+              >
+                {profiles.map((item, index) => (
+                  <option key={`${item.name}-${index}`} value={index}>
+                    {item.name}（{item.title}）
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <p className="mt-2 text-sm text-slate-600">
+              選択した方の役職に対応する旅費規程が、新しい出張に自動適用されます。
+            </p>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <button
               onClick={startNew}
@@ -546,6 +583,7 @@ export default function HomePage() {
                       <article key={item.id} className="grid gap-3 p-4 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
                         <div>
                           <p className="font-bold">{item.destination || "出張先未入力"}</p>
+                          <p className="text-sm font-semibold text-moss">{item.profileSnapshot.name}</p>
                           <p className="text-sm text-slate-600">
                             {item.startDate} - {item.endDate} / {item.category}
                           </p>
@@ -591,6 +629,8 @@ export default function HomePage() {
         <SettingsView
           profile={profile}
           setProfile={setProfile}
+          profiles={profiles}
+          setProfiles={setProfiles}
           rules={rules}
           setRules={setRules}
           airFares={airFares}
@@ -1187,6 +1227,8 @@ function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: 
 function SettingsView({
   profile,
   setProfile,
+  profiles,
+  setProfiles,
   rules,
   setRules,
   airFares,
@@ -1196,6 +1238,8 @@ function SettingsView({
 }: {
   profile: Profile;
   setProfile: (profile: Profile) => void;
+  profiles: Profile[];
+  setProfiles: (profiles: Profile[]) => void;
   rules: TravelRule[];
   setRules: (rules: TravelRule[]) => void;
   airFares: AirFare[];
@@ -1227,6 +1271,7 @@ function SettingsView({
       version: 1,
       exportedAt: new Date().toISOString(),
       profile,
+      profiles,
       rules,
       airFares,
       trips,
@@ -1244,6 +1289,7 @@ function SettingsView({
     try {
       const backup = JSON.parse(await file.text()) as Partial<{
         profile: Profile;
+        profiles: Profile[];
         rules: TravelRule[];
         airFares: AirFare[];
         trips: Trip[];
@@ -1254,6 +1300,7 @@ function SettingsView({
       }
       if (!confirm("バックアップを読み込むと、現在の保存データが置き換わります。読み込みますか？")) return;
       setProfile(backup.profile);
+      setProfiles(Array.isArray(backup.profiles) && backup.profiles.length ? backup.profiles : [backup.profile, defaultProfiles[1]]);
       setRules(backup.rules);
       setAirFares(backup.airFares);
       setTrips(backup.trips);
@@ -1268,6 +1315,9 @@ function SettingsView({
   return (
     <section className="mx-auto grid max-w-6xl gap-5 px-4 py-5">
       <Panel title="プロフィール">
+        <div className="mb-3 rounded-lg bg-skysoft p-3 text-sm text-slate-700">
+          ホーム画面で選択している出張者のプロフィールを編集しています。
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {(["companyName", "name", "department", "title"] as const).map((key) => (
             <Field key={key} label={{ companyName: "会社名", name: "氏名", department: "所属", title: "役職" }[key]}>
