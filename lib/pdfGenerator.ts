@@ -114,11 +114,11 @@ const drawSection = (ctx: CanvasRenderingContext2D, title: string, y: number) =>
   return y + 68;
 };
 
-const drawInfoTable = (ctx: CanvasRenderingContext2D, rows: string[][], y: number, fontSize = 22) => {
+const drawInfoTable = (ctx: CanvasRenderingContext2D, rows: string[][], y: number, fontSize = 22, minRowHeight = 60) => {
   let currentY = y;
   for (const [label, value] of rows) {
     const valueLines = wrapLines(ctx, value || "-", contentWidth - labelWidth - 30, fontSize);
-    const rowHeight = Math.max(60, valueLines.length * 34 + 24);
+    const rowHeight = Math.max(minRowHeight, valueLines.length * 34 + 16);
     ctx.fillStyle = pale;
     ctx.fillRect(margin, currentY, labelWidth, rowHeight);
     ctx.strokeStyle = line;
@@ -162,15 +162,15 @@ const drawDataTable = (
   return currentY;
 };
 
-const drawStampBoxes = (ctx: CanvasRenderingContext2D, labels: string[], y: number) => {
+const drawStampBoxes = (ctx: CanvasRenderingContext2D, labels: string[], y: number, height = 92) => {
   const width = contentWidth / labels.length;
   labels.forEach((label, index) => {
     const x = margin + width * index;
     ctx.strokeStyle = line;
-    ctx.strokeRect(x, y, width, 92);
-    drawText(ctx, label, x + width / 2, y + 24, 20, "normal", "center");
+    ctx.strokeRect(x, y, width, height);
+    drawText(ctx, label, x + width / 2, y + Math.max(10, (height - 20) / 2), 20, "normal", "center");
   });
-  return y + 92;
+  return y + height;
 };
 
 const splitBase64 = (dataUrl: string) => dataUrl.split(",")[1] ?? "";
@@ -339,7 +339,8 @@ export const downloadExpensePdf = (trip: Trip) => {
       ["適用旅費規程", rule ? `${rule.category} / ${rule.title}` : "-"],
     ],
     y,
-    20,
+    18,
+    46,
   );
   y = drawSection(ctx, "交通費明細", y + 44);
   y = drawDataTable(
@@ -374,8 +375,27 @@ export const downloadExpensePdf = (trip: Trip) => {
     y,
     22,
   );
-  y += 48;
-  drawStampBoxes(ctx, ["担当印", "上席印", "出納印"], Math.min(y, pageHeight - 300));
-  drawFooter(ctx, trip.profileSnapshot.companyName, 1, 1);
-  canvasesToPdf([page], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+  const approvalHeight = 50;
+  const approvalY = y + 12;
+  const approvalBottom = pageHeight - 150;
+  if (approvalY + approvalHeight <= approvalBottom) {
+    drawStampBoxes(ctx, ["担当印", "上席印", "出納印"], approvalY, approvalHeight);
+    drawFooter(ctx, trip.profileSnapshot.companyName, 1, 1);
+    canvasesToPdf([page], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+    return;
+  }
+
+  const approvalPage = createPage();
+  drawTitle(approvalPage.ctx, "出張旅費 精算書（承認欄）");
+  let approvalPageY = 190;
+  approvalPageY = drawInfoTable(
+    approvalPage.ctx,
+    [["氏名", trip.profileSnapshot.name], ["出張期間", `${trip.startDate} - ${trip.endDate}`], ["旅費総額", yen(totals.grand)]],
+    approvalPageY,
+    22,
+  );
+  drawStampBoxes(approvalPage.ctx, ["担当印", "上席印", "出納印"], approvalPageY + 48);
+  drawFooter(ctx, trip.profileSnapshot.companyName, 1, 2);
+  drawFooter(approvalPage.ctx, trip.profileSnapshot.companyName, 2, 2);
+  canvasesToPdf([page, approvalPage], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
 };
