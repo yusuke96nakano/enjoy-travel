@@ -280,19 +280,43 @@ const canvasesToPdf = (pages: DrawPage[], filename: string) => {
 };
 
 export const downloadReportPdf = (trip: Trip) => {
-  const page = createPage();
-  const { ctx } = page;
+  const pages: DrawPage[] = [];
+  let page = createPage();
+  pages.push(page);
+  let { ctx } = page;
   drawTitle(ctx, "出張報告書");
   let y = 176;
   y = drawInfoTable(ctx, [["氏名", trip.profileSnapshot.name], ["役職", trip.profileSnapshot.title]], y);
   y = drawSection(ctx, "報告概要", y + 54);
   y = drawInfoTable(ctx, [["出張期間", `${trip.startDate} - ${trip.endDate}`], ["出張地域", trip.destination], ["出張目的", trip.purpose]], y);
   y = drawSection(ctx, "報告事項", y + 54);
-  y = drawWrapped(ctx, trip.reportText || "", margin, y, contentWidth, 21, 38);
-  y += 48;
-  drawStampBoxes(ctx, ["上席確認欄", "最終確認欄"], Math.min(y, pageHeight - 310));
-  drawFooter(ctx, trip.profileSnapshot.companyName, 1, 1);
-  canvasesToPdf([page], `${fileSafe(`出張報告書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+  const lineHeight = 38;
+  const contentBottom = pageHeight - 190;
+  const reportLines = wrapLines(ctx, trip.reportText || "", contentWidth, 21);
+
+  const addContinuationPage = () => {
+    page = createPage();
+    pages.push(page);
+    ctx = page.ctx;
+    drawTitle(ctx, "出張報告書（続き）");
+    y = drawSection(ctx, "報告事項（続き）", 176);
+  };
+
+  reportLines.forEach((lineText) => {
+    if (y + lineHeight > contentBottom) addContinuationPage();
+    if (lineText) drawText(ctx, lineText, margin, y, 21);
+    y += lineHeight;
+  });
+
+  const stampHeight = 92;
+  const stampGap = 48;
+  if (y + stampGap + stampHeight > contentBottom) addContinuationPage();
+  drawStampBoxes(ctx, ["上席確認欄", "最終確認欄"], y + stampGap);
+
+  pages.forEach((currentPage, index) => {
+    drawFooter(currentPage.ctx, trip.profileSnapshot.companyName, index + 1, pages.length);
+  });
+  canvasesToPdf(pages, `${fileSafe(`出張報告書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
 };
 
 export const downloadExpensePdf = (trip: Trip) => {
