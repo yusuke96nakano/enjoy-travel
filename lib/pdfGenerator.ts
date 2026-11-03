@@ -466,6 +466,77 @@ export const downloadReportPdf = (trip: Trip) =>
 export const downloadExpensePdf = (trip: Trip) =>
   canvasesToPdf(renderExpensePages(trip), `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
 
+
+const renderMonthlyExpenseCover = (trips: Trip[], month: string): DrawPage => {
+  const page = createPage();
+  const { ctx } = page;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const monthEnd = new Date(year, monthNumber, 0).getDate();
+  const total = trips.reduce((sum, trip) => {
+    const t = calculateTotals(trip);
+    return { transport: sum.transport + t.transport, lodging: sum.lodging + t.lodging,
+      perDiem: sum.perDiem + t.perDiem, preparation: sum.preparation + t.preparation,
+      grand: sum.grand + t.grand };
+  }, { transport: 0, lodging: 0, perDiem: 0, preparation: 0, grand: 0 });
+  const company = trips[0].profileSnapshot.companyName;
+  ctx.fillStyle = "#18314d";
+  ctx.fillRect(margin, 65, contentWidth, 5);
+  drawText(ctx, company, margin, 88, 22, "bold");
+  drawText(ctx, "出張旅費 精算書（月次合計表）", pageWidth / 2, 160, 40, "bold", "center");
+  drawText(ctx, `${year}年${monthNumber}月分`, pageWidth / 2, 222, 27, "bold", "center");
+  ctx.fillStyle = "#eaf2fa";
+  ctx.fillRect(margin, 300, contentWidth, 118);
+  drawText(ctx, "旅費総額", margin + 25, 337, 28, "bold");
+  drawText(ctx, yen(total.grand), pageWidth - margin - 25, 322, 55, "bold", "right");
+  drawText(ctx, "費目別合計", margin, 465, 26, "bold");
+  const entries = [["交通費", total.transport], ["宿泊費", total.lodging],
+    ["日当", total.perDiem], ["渡航支度金", total.preparation]] as const;
+  entries.forEach(([name, amount], i) => {
+    const x = margin + (i % 2) * contentWidth / 2;
+    const y = 510 + Math.floor(i / 2) * 84;
+    ctx.strokeStyle = "#a9b8c8";
+    ctx.strokeRect(x, y, contentWidth / 2, 80);
+    drawText(ctx, name, x + 14, y + 12, 20);
+    drawText(ctx, yen(amount), x + contentWidth / 2 - 14, y + 39, 25, "bold", "right");
+  });
+  drawText(ctx, `出張一覧（${trips.length}件）`, margin, 713, 26, "bold");
+  const startY = 760;
+  const rowHeight = Math.min(54, 600 / (trips.length + 1));
+  const font = rowHeight >= 40 ? 19 : rowHeight >= 28 ? 15 : 11;
+  const widths = [55, 330, 260, contentWidth - 645];
+  const drawRow = (cells: string[], index: number, header = false) => {
+    const y = startY + index * rowHeight;
+    ctx.fillStyle = header ? "#eaf2fa" : "#ffffff";
+    ctx.fillRect(margin, y, contentWidth, rowHeight);
+    ctx.strokeStyle = "#b5c2d0";
+    ctx.strokeRect(margin, y, contentWidth, rowHeight);
+    let x = margin;
+    cells.forEach((value, i) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 5, y + 1, widths[i] - 10, rowHeight - 2);
+      ctx.clip();
+      drawText(ctx, value, i === 3 ? x + widths[i] - 9 : x + 9,
+        y + Math.max(3, (rowHeight - font) / 2), font, header ? "bold" : "normal",
+        i === 3 ? "right" : "left");
+      ctx.restore();
+      x += widths[i];
+    });
+  };
+  drawRow(["No.", "出張期間", "出張先", "旅費合計"], 0, true);
+  trips.forEach((trip, index) => drawRow([String(index + 1),
+    `${trip.startDate} ～ ${trip.endDate}`, trip.destination || "未入力",
+    yen(calculateTotals(trip).grand)], index + 1));
+  drawText(ctx, `合計 ${trips.length}件　${yen(total.grand)}`, pageWidth - margin,
+    startY + (trips.length + 1) * rowHeight + 15, 22, "bold", "right");
+  drawText(ctx, "添付：各出張の旅費精算書", margin, 1515, 20);
+  drawText(ctx, `提出日：${year}年${monthNumber}月${monthEnd}日`,
+    pageWidth - margin, 1515, 20, "normal", "right");
+  drawStampBoxes(ctx, ["上席確認", "最終確認"], 1555, 60);
+  drawFooter(ctx, company, 1, 1);
+  return page;
+};
+
 export type MonthlyPdfKind = "report" | "expense";
 
 export const downloadMonthlyPdf = (trips: Trip[], month: string, kind: MonthlyPdfKind) => {
@@ -479,6 +550,12 @@ export const downloadMonthlyPdf = (trips: Trip[], month: string, kind: MonthlyPd
   return saveMonthlyPdf(() => {
     // Encode each trip before drawing the next to limit mobile canvas memory.
     const images: string[] = [];
+    if (kind === "expense") {
+      const { canvas } = renderMonthlyExpenseCover(orderedTrips, month);
+      images.push(canvas.toDataURL("image/jpeg", 0.94));
+      canvas.width = 0;
+      canvas.height = 0;
+    }
     for (const trip of orderedTrips) {
       const pages = kind === "report" ? renderReportPages(trip) : renderExpensePages(trip);
       for (const { canvas } of pages) {
