@@ -285,34 +285,94 @@ const renderReportPages = (trip: Trip) => {
   let page = createPage();
   pages.push(page);
   let { ctx } = page;
+  const contentBottom = pageHeight - 190;
+  const stampHeight = 92;
+  const infoRows = [
+    ["氏名", trip.profileSnapshot.name],
+    ["役職", trip.profileSnapshot.title],
+  ];
+  const overviewRows = [
+    ["出張期間", `${trip.startDate} - ${trip.endDate}`],
+    ["出張地域", trip.destination],
+    ["出張目的", trip.purpose],
+  ];
+  const tableHeight = (rows: string[][]) => rows.reduce((height, [, value]) =>
+    height + Math.max(60, wrapLines(ctx, value || "-", contentWidth - labelWidth - 30, 22).length * 34 + 16), 0);
+  const source = (trip.reportText || "").replace(/\r\n?/g, "\n");
+
+  // Try spacing first, then reduce text in measured steps. 19px on this
+  // 1240px-wide A4 canvas is approximately 9.1pt; never go below that.
+  const candidates = [
+    { fontSize: 21, lineHeight: 38, sectionGap: 54, stampGap: 48 },
+    { fontSize: 21, lineHeight: 32, sectionGap: 32, stampGap: 28 },
+    { fontSize: 20, lineHeight: 30, sectionGap: 32, stampGap: 28 },
+    { fontSize: 19, lineHeight: 29, sectionGap: 32, stampGap: 28 },
+  ];
+  const measured = candidates.map((layout) => {
+    const lines = wrapLines(ctx, source, contentWidth, layout.fontSize);
+    const reportY = 176 + tableHeight(infoRows) + tableHeight(overviewRows) +
+      2 * (layout.sectionGap + 68);
+    return { ...layout, lines, fits: reportY + lines.length * layout.lineHeight +
+      layout.stampGap + stampHeight <= contentBottom };
+  });
+  const layout = measured.find((candidate) => candidate.fits) ?? measured[measured.length - 1];
   drawTitle(ctx, "出張報告書");
   let y = 176;
-  y = drawInfoTable(ctx, [["氏名", trip.profileSnapshot.name], ["役職", trip.profileSnapshot.title]], y);
-  y = drawSection(ctx, "報告概要", y + 54);
-  y = drawInfoTable(ctx, [["出張期間", `${trip.startDate} - ${trip.endDate}`], ["出張地域", trip.destination], ["出張目的", trip.purpose]], y);
-  y = drawSection(ctx, "報告事項", y + 54);
-  const lineHeight = 38;
-  const contentBottom = pageHeight - 190;
-  const reportLines = wrapLines(ctx, trip.reportText || "", contentWidth, 21);
 
-  const addContinuationPage = () => {
+  const nextPage = (section: string) => {
     page = createPage();
     pages.push(page);
     ctx = page.ctx;
     drawTitle(ctx, "出張報告書（続き）");
-    y = drawSection(ctx, "報告事項（続き）", 176);
+    y = drawSection(ctx, section, 176);
   };
 
-  reportLines.forEach((lineText) => {
-    if (y + lineHeight > contentBottom) addContinuationPage();
-    if (lineText) drawText(ctx, lineText, margin, y, 21);
-    y += lineHeight;
-  });
+  // Keep the existing info table appearance, but split unusually long fields
+  // across pages instead of allowing them to overlap the footer or report.
+  const drawReportInfo = (rows: string[][]) => {
+    for (const [label, value] of rows) {
+      const lines = wrapLines(ctx, value || "-", contentWidth - labelWidth - 30, 22);
+      let offset = 0;
+      while (offset < lines.length) {
+        if (y + 60 > contentBottom) nextPage("報告概要（続き）");
+        const capacity = Math.max(1, Math.floor((contentBottom - y - 16) / 34));
+        const chunk = lines.slice(offset, offset + capacity);
+        const height = Math.max(60, chunk.length * 34 + 16);
+        ctx.fillStyle = pale;
+        ctx.fillRect(margin, y, labelWidth, height);
+        ctx.strokeStyle = line;
+        ctx.strokeRect(margin, y, labelWidth, height);
+        ctx.strokeRect(margin + labelWidth, y, contentWidth - labelWidth, height);
+        drawText(ctx, offset === 0 ? label : `${label}（続き）`, margin + 18, y + 18, 22, "bold");
+        chunk.forEach((text, index) => drawText(ctx, text, margin + labelWidth + 18, y + 18 + index * 34, 22));
+        y += height;
+        offset += chunk.length;
+      }
+    }
+  };
+  const section = (title: string) => {
+    // Reserve a line below each section heading.
+    if (y + layout.sectionGap + 68 + 60 > contentBottom) nextPage(title);
+    else y = drawSection(ctx, title, y + layout.sectionGap);
+  };
+  drawReportInfo(infoRows);
+  section("報告概要");
+  drawReportInfo(overviewRows);
+  section("報告事項");
 
-  const stampHeight = 92;
-  const stampGap = 48;
-  if (y + stampGap + stampHeight > contentBottom) addContinuationPage();
-  drawStampBoxes(ctx, ["上席確認欄", "最終確認欄"], y + stampGap);
+  layout.lines.forEach((lineText, index) => {
+    const remaining = layout.lines.length - index;
+    // Keep the final few lines with the confirmation boxes where possible.
+    const tailHeight = remaining * layout.lineHeight + layout.stampGap + stampHeight;
+    if (y + layout.lineHeight > contentBottom ||
+        (remaining <= 3 && y + tailHeight > contentBottom)) {
+      nextPage("報告事項（続き）");
+    }
+    if (lineText) drawText(ctx, lineText, margin, y, layout.fontSize);
+    y += layout.lineHeight;
+  });
+  if (y + layout.stampGap + stampHeight > contentBottom) nextPage("報告事項（続き）");
+  drawStampBoxes(ctx, ["上席確認欄", "最終確認欄"], y + layout.stampGap);
 
   pages.forEach((currentPage, index) => {
     drawFooter(currentPage.ctx, trip.profileSnapshot.companyName, index + 1, pages.length);
