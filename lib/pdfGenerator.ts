@@ -1,5 +1,6 @@
 import { calculateTotals, lodgingNights, yen } from "./calc";
 import { Trip } from "./types";
+import { saveMonthlyPdf } from "./monthlyPdfSave";
 
 const pageWidth = 1240;
 const pageHeight = 1754;
@@ -413,17 +414,19 @@ export const downloadMonthlyPdf = (trips: Trip[], month: string, kind: MonthlyPd
     .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.createdAt.localeCompare(b.createdAt));
   if (!orderedTrips.length) throw new Error("この月の出張データはありません。");
 
-  // Encode each trip before drawing the next, so a month of full-size canvases
-  // does not stay allocated at once on mobile devices.
-  const images: string[] = [];
-  for (const trip of orderedTrips) {
-    const pages = kind === "report" ? renderReportPages(trip) : renderExpensePages(trip);
-    for (const { canvas } of pages) {
-      images.push(canvas.toDataURL("image/jpeg", 0.94));
-      canvas.width = 0;
-      canvas.height = 0;
-    }
-  }
   const label = kind === "report" ? "出張報告書" : "出張旅費精算書";
-  return shareOrDownloadPdf(buildPdf(images), `${fileSafe(`${month}_${label}_一括`)}.pdf`);
+  const filename = `${fileSafe(`${month}_${label}_一括`)}.pdf`;
+  return saveMonthlyPdf(() => {
+    // Encode each trip before drawing the next to limit mobile canvas memory.
+    const images: string[] = [];
+    for (const trip of orderedTrips) {
+      const pages = kind === "report" ? renderReportPages(trip) : renderExpensePages(trip);
+      for (const { canvas } of pages) {
+        images.push(canvas.toDataURL("image/jpeg", 0.94));
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+    return buildPdf(images);
+  }, filename, downloadBlob);
 };
