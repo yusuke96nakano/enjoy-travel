@@ -1,5 +1,6 @@
 import { calculateTotals, lodgingNights, yen } from "./calc";
 import { Trip } from "./types";
+import { saveMonthlyPdf } from "./monthlyPdfSave";
 
 const pageWidth = 1240;
 const pageHeight = 1754;
@@ -276,50 +277,110 @@ const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
 
 const canvasesToPdf = (pages: DrawPage[], filename: string) => {
   const imageDataUrls = pages.map((page) => page.canvas.toDataURL("image/jpeg", 0.94));
-  void shareOrDownloadPdf(buildPdf(imageDataUrls), filename);
+  return shareOrDownloadPdf(buildPdf(imageDataUrls), filename);
 };
 
-export const downloadReportPdf = (trip: Trip) => {
+const renderReportPages = (trip: Trip) => {
   const pages: DrawPage[] = [];
   let page = createPage();
   pages.push(page);
   let { ctx } = page;
+  const contentBottom = pageHeight - 190;
+  const stampHeight = 92;
+  const infoRows = [
+    ["氏名", trip.profileSnapshot.name],
+    ["役職", trip.profileSnapshot.title],
+  ];
+  const overviewRows = [
+    ["出張期間", `${trip.startDate} - ${trip.endDate}`],
+    ["出張地域", trip.destination],
+    ["出張目的", trip.purpose],
+  ];
+  const tableHeight = (rows: string[][]) => rows.reduce((height, [, value]) =>
+    height + Math.max(60, wrapLines(ctx, value || "-", contentWidth - labelWidth - 30, 22).length * 34 + 16), 0);
+  const source = (trip.reportText || "").replace(/\r\n?/g, "\n");
+
+  // Try spacing first, then reduce text in measured steps. 19px on this
+  // 1240px-wide A4 canvas is approximately 9.1pt; never go below that.
+  const candidates = [
+    { fontSize: 21, lineHeight: 38, sectionGap: 54, stampGap: 48 },
+    { fontSize: 21, lineHeight: 32, sectionGap: 32, stampGap: 28 },
+    { fontSize: 20, lineHeight: 30, sectionGap: 32, stampGap: 28 },
+    { fontSize: 19, lineHeight: 29, sectionGap: 32, stampGap: 28 },
+  ];
+  const measured = candidates.map((layout) => {
+    const lines = wrapLines(ctx, source, contentWidth, layout.fontSize);
+    const reportY = 176 + tableHeight(infoRows) + tableHeight(overviewRows) +
+      2 * (layout.sectionGap + 68);
+    return { ...layout, lines, fits: reportY + lines.length * layout.lineHeight +
+      layout.stampGap + stampHeight <= contentBottom };
+  });
+  const layout = measured.find((candidate) => candidate.fits) ?? measured[measured.length - 1];
   drawTitle(ctx, "出張報告書");
   let y = 176;
-  y = drawInfoTable(ctx, [["氏名", trip.profileSnapshot.name], ["役職", trip.profileSnapshot.title]], y);
-  y = drawSection(ctx, "報告概要", y + 54);
-  y = drawInfoTable(ctx, [["出張期間", `${trip.startDate} - ${trip.endDate}`], ["出張地域", trip.destination], ["出張目的", trip.purpose]], y);
-  y = drawSection(ctx, "報告事項", y + 54);
-  const lineHeight = 38;
-  const contentBottom = pageHeight - 190;
-  const reportLines = wrapLines(ctx, trip.reportText || "", contentWidth, 21);
 
-  const addContinuationPage = () => {
+  const nextPage = (section: string) => {
     page = createPage();
     pages.push(page);
     ctx = page.ctx;
     drawTitle(ctx, "出張報告書（続き）");
-    y = drawSection(ctx, "報告事項（続き）", 176);
+    y = drawSection(ctx, section, 176);
   };
 
-  reportLines.forEach((lineText) => {
-    if (y + lineHeight > contentBottom) addContinuationPage();
-    if (lineText) drawText(ctx, lineText, margin, y, 21);
-    y += lineHeight;
-  });
+  // Keep the existing info table appearance, but split unusually long fields
+  // across pages instead of allowing them to overlap the footer or report.
+  const drawReportInfo = (rows: string[][]) => {
+    for (const [label, value] of rows) {
+      const lines = wrapLines(ctx, value || "-", contentWidth - labelWidth - 30, 22);
+      let offset = 0;
+      while (offset < lines.length) {
+        if (y + 60 > contentBottom) nextPage("報告概要（続き）");
+        const capacity = Math.max(1, Math.floor((contentBottom - y - 16) / 34));
+        const chunk = lines.slice(offset, offset + capacity);
+        const height = Math.max(60, chunk.length * 34 + 16);
+        ctx.fillStyle = pale;
+        ctx.fillRect(margin, y, labelWidth, height);
+        ctx.strokeStyle = line;
+        ctx.strokeRect(margin, y, labelWidth, height);
+        ctx.strokeRect(margin + labelWidth, y, contentWidth - labelWidth, height);
+        drawText(ctx, offset === 0 ? label : `${label}（続き）`, margin + 18, y + 18, 22, "bold");
+        chunk.forEach((text, index) => drawText(ctx, text, margin + labelWidth + 18, y + 18 + index * 34, 22));
+        y += height;
+        offset += chunk.length;
+      }
+    }
+  };
+  const section = (title: string) => {
+    // Reserve a line below each section heading.
+    if (y + layout.sectionGap + 68 + 60 > contentBottom) nextPage(title);
+    else y = drawSection(ctx, title, y + layout.sectionGap);
+  };
+  drawReportInfo(infoRows);
+  section("報告概要");
+  drawReportInfo(overviewRows);
+  section("報告事項");
 
-  const stampHeight = 92;
-  const stampGap = 48;
-  if (y + stampGap + stampHeight > contentBottom) addContinuationPage();
-  drawStampBoxes(ctx, ["上席確認欄", "最終確認欄"], y + stampGap);
+  layout.lines.forEach((lineText, index) => {
+    const remaining = layout.lines.length - index;
+    // Keep the final few lines with the confirmation boxes where possible.
+    const tailHeight = remaining * layout.lineHeight + layout.stampGap + stampHeight;
+    if (y + layout.lineHeight > contentBottom ||
+        (remaining <= 3 && y + tailHeight > contentBottom)) {
+      nextPage("報告事項（続き）");
+    }
+    if (lineText) drawText(ctx, lineText, margin, y, layout.fontSize);
+    y += layout.lineHeight;
+  });
+  if (y + layout.stampGap + stampHeight > contentBottom) nextPage("報告事項（続き）");
+  drawStampBoxes(ctx, ["上席確認欄", "最終確認欄"], y + layout.stampGap);
 
   pages.forEach((currentPage, index) => {
     drawFooter(currentPage.ctx, trip.profileSnapshot.companyName, index + 1, pages.length);
   });
-  canvasesToPdf(pages, `${fileSafe(`出張報告書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+  return pages;
 };
 
-export const downloadExpensePdf = (trip: Trip) => {
+const renderExpensePages = (trip: Trip) => {
   const page = createPage();
   const { ctx } = page;
   const totals = calculateTotals(trip);
@@ -381,8 +442,7 @@ export const downloadExpensePdf = (trip: Trip) => {
   if (approvalY + approvalHeight <= approvalBottom) {
     drawStampBoxes(ctx, ["担当印", "上席印", "出納印"], approvalY, approvalHeight);
     drawFooter(ctx, trip.profileSnapshot.companyName, 1, 1);
-    canvasesToPdf([page], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
-    return;
+    return [page];
   }
 
   const approvalPage = createPage();
@@ -397,5 +457,36 @@ export const downloadExpensePdf = (trip: Trip) => {
   drawStampBoxes(approvalPage.ctx, ["担当印", "上席印", "出納印"], approvalPageY + 48);
   drawFooter(ctx, trip.profileSnapshot.companyName, 1, 2);
   drawFooter(approvalPage.ctx, trip.profileSnapshot.companyName, 2, 2);
-  canvasesToPdf([page, approvalPage], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+  return [page, approvalPage];
+};
+
+export const downloadReportPdf = (trip: Trip) =>
+  canvasesToPdf(renderReportPages(trip), `${fileSafe(`出張報告書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+
+export const downloadExpensePdf = (trip: Trip) =>
+  canvasesToPdf(renderExpensePages(trip), `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+
+export type MonthlyPdfKind = "report" | "expense";
+
+export const downloadMonthlyPdf = (trips: Trip[], month: string, kind: MonthlyPdfKind) => {
+  const orderedTrips = trips
+    .filter((trip) => trip.startDate.slice(0, 7) === month)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.createdAt.localeCompare(b.createdAt));
+  if (!orderedTrips.length) throw new Error("この月の出張データはありません。");
+
+  const label = kind === "report" ? "出張報告書" : "出張旅費精算書";
+  const filename = `${fileSafe(`${month}_${label}_一括`)}.pdf`;
+  return saveMonthlyPdf(() => {
+    // Encode each trip before drawing the next to limit mobile canvas memory.
+    const images: string[] = [];
+    for (const trip of orderedTrips) {
+      const pages = kind === "report" ? renderReportPages(trip) : renderExpensePages(trip);
+      for (const { canvas } of pages) {
+        images.push(canvas.toDataURL("image/jpeg", 0.94));
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+    return buildPdf(images);
+  }, filename, downloadBlob);
 };

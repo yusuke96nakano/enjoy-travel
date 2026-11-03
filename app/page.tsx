@@ -17,7 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { calculateTotals, dateDiffDaysInclusive, findRule, lodgingNights, uid, yen } from "@/lib/calc";
 import { defaultAirFares, defaultProfile, defaultProfiles, defaultRules } from "@/lib/data";
-import { downloadExpensePdf, downloadReportPdf } from "@/lib/pdfGenerator";
+import { downloadExpensePdf, downloadReportPdf, downloadMonthlyPdf, MonthlyPdfKind } from "@/lib/pdfGenerator";
 import { AirFare, LodgingItem, Profile, TransportItem, TravelRule, Trip, TripCategory } from "@/lib/types";
 
 const storageKeys = {
@@ -320,6 +320,8 @@ export default function HomePage() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [printBackView, setPrintBackView] = useState<"dashboard" | "form">("form");
   const [historyMonth, setHistoryMonth] = useState<string>("all");
+  const [exportingPdf, setExportingPdf] = useState<MonthlyPdfKind | null>(null);
+  const [pdfError, setPdfError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -368,6 +370,28 @@ export default function HomePage() {
     () => (historyMonth === "all" ? sortedTrips : sortedTrips.filter((item) => tripMonthKey(item) === historyMonth)),
     [historyMonth, sortedTrips],
   );
+  const historyTotal = useMemo(
+    () => filteredTrips.reduce((sum, item) => sum + calculateTotals(item).grand, 0),
+    [filteredTrips],
+  );
+
+  const exportMonthlyPdf = async (kind: MonthlyPdfKind) => {
+    if (exportingPdf || historyMonth === "all" || !filteredTrips.length) return;
+    setExportingPdf(kind);
+    setPdfError("");
+    try {
+      await downloadMonthlyPdf(
+        filteredTrips.map((item) => ({ ...item, reportText: item.reportText || buildReportText(item) })),
+        historyMonth,
+        kind,
+      );
+    } catch {
+      setPdfError("PDFを保存できませんでした。もう一度お試しください。");
+    } finally {
+      setExportingPdf(null);
+    }
+  };
+
   const monthTotal = useMemo(() => {
     return trips
       .filter((item) => tripMonthKey(item) === currentMonthKey)
@@ -568,6 +592,31 @@ export default function HomePage() {
                     {formatMonthLabel(month)}
                   </button>
                 ))}
+              </div>
+            )}
+            {historyMonth !== "all" && (
+              <div className="mt-3 rounded-lg border border-line bg-white p-4">
+                <p className="font-bold">{formatMonthLabel(historyMonth)}の出張集計</p>
+                <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                  <div className="flex gap-2"><dt>出張件数</dt><dd className="font-bold">{filteredTrips.length}件</dd></div>
+                  <div className="flex flex-wrap gap-2"><dt>出張費合計</dt><dd className="font-bold text-coral">{yen(historyTotal)}</dd></div>
+                </dl>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {(["report", "expense"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      disabled={exportingPdf !== null || filteredTrips.length === 0}
+                      onClick={() => void exportMonthlyPdf(kind)}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line px-3 py-3 text-sm font-bold disabled:cursor-wait disabled:opacity-50"
+                    >
+                      <Download size={18} className="shrink-0" />
+                      {kind === "report" ? "報告書を一括PDF保存" : "精算書を一括PDF保存"}
+                    </button>
+                  ))}
+                </div>
+                {exportingPdf && <p role="status" className="mt-2 text-sm">PDFを保存しています…</p>}
+                {pdfError && <p role="alert" className="mt-2 text-sm text-red-700">{pdfError}</p>}
               </div>
             )}
             <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white">
