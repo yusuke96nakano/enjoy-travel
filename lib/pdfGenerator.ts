@@ -276,10 +276,10 @@ const shareOrDownloadPdf = async (blob: Blob, filename: string) => {
 
 const canvasesToPdf = (pages: DrawPage[], filename: string) => {
   const imageDataUrls = pages.map((page) => page.canvas.toDataURL("image/jpeg", 0.94));
-  void shareOrDownloadPdf(buildPdf(imageDataUrls), filename);
+  return shareOrDownloadPdf(buildPdf(imageDataUrls), filename);
 };
 
-export const downloadReportPdf = (trip: Trip) => {
+const renderReportPages = (trip: Trip) => {
   const pages: DrawPage[] = [];
   let page = createPage();
   pages.push(page);
@@ -316,10 +316,10 @@ export const downloadReportPdf = (trip: Trip) => {
   pages.forEach((currentPage, index) => {
     drawFooter(currentPage.ctx, trip.profileSnapshot.companyName, index + 1, pages.length);
   });
-  canvasesToPdf(pages, `${fileSafe(`出張報告書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+  return pages;
 };
 
-export const downloadExpensePdf = (trip: Trip) => {
+const renderExpensePages = (trip: Trip) => {
   const page = createPage();
   const { ctx } = page;
   const totals = calculateTotals(trip);
@@ -381,8 +381,7 @@ export const downloadExpensePdf = (trip: Trip) => {
   if (approvalY + approvalHeight <= approvalBottom) {
     drawStampBoxes(ctx, ["担当印", "上席印", "出納印"], approvalY, approvalHeight);
     drawFooter(ctx, trip.profileSnapshot.companyName, 1, 1);
-    canvasesToPdf([page], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
-    return;
+    return [page];
   }
 
   const approvalPage = createPage();
@@ -397,5 +396,34 @@ export const downloadExpensePdf = (trip: Trip) => {
   drawStampBoxes(approvalPage.ctx, ["担当印", "上席印", "出納印"], approvalPageY + 48);
   drawFooter(ctx, trip.profileSnapshot.companyName, 1, 2);
   drawFooter(approvalPage.ctx, trip.profileSnapshot.companyName, 2, 2);
-  canvasesToPdf([page, approvalPage], `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+  return [page, approvalPage];
+};
+
+export const downloadReportPdf = (trip: Trip) =>
+  canvasesToPdf(renderReportPages(trip), `${fileSafe(`出張報告書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+
+export const downloadExpensePdf = (trip: Trip) =>
+  canvasesToPdf(renderExpensePages(trip), `${fileSafe(`出張旅費精算書_${trip.startDate}_${trip.destination || "出張先"}`)}.pdf`);
+
+export type MonthlyPdfKind = "report" | "expense";
+
+export const downloadMonthlyPdf = (trips: Trip[], month: string, kind: MonthlyPdfKind) => {
+  const orderedTrips = trips
+    .filter((trip) => trip.startDate.slice(0, 7) === month)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.createdAt.localeCompare(b.createdAt));
+  if (!orderedTrips.length) throw new Error("この月の出張データはありません。");
+
+  // Encode each trip before drawing the next, so a month of full-size canvases
+  // does not stay allocated at once on mobile devices.
+  const images: string[] = [];
+  for (const trip of orderedTrips) {
+    const pages = kind === "report" ? renderReportPages(trip) : renderExpensePages(trip);
+    for (const { canvas } of pages) {
+      images.push(canvas.toDataURL("image/jpeg", 0.94));
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  }
+  const label = kind === "report" ? "出張報告書" : "出張旅費精算書";
+  return shareOrDownloadPdf(buildPdf(images), `${fileSafe(`${month}_${label}_一括`)}.pdf`);
 };
